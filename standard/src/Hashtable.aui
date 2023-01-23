@@ -1,0 +1,28 @@
+
+module Hashtable is
+
+    type HashMap[K: Free, V: Type]: Type;
+
+    typeclass Hashable(K: Free) is
+        generic [R: Region]
+        method hash(key: &[K, R]): Index;
+    end;
+
+    generic[K: Free, V: Type]
+    function initializeHashMap(): Option[HashMap[K,V]];
+
+    generic[K: Free, V: Type]
+    function destroyHashMap(map: HashMap[K,V]): Unit;
+
+    generic[K: Free, V: Type, R: Region]
+    function removeHashMap(map: &![HashMap[K,V], R], fd: K): V;
+
+    generic[K: Free, V: Type, R: Region]
+    function setHash(map: &![HashMap[K,V], R], fd: K, value: V): Unit;
+
+    generic[K: Free(Printable), V: Type, R: Region]
+    function dump(map: &[HashMap[K,V], R]): Unit;
+
+    instance Hashable(Nat32);
+
+end module.

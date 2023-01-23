@@ -5,6 +5,7 @@ MODULES := \
 		src/Order.aui,src/Order.aum \
 		src/Box.aui,src/Box.aum \
 		src/Buffer.aui,src/Buffer.aum \
+		src/Hashtable.aui,src/Hashtable.aum \
 		src/ByteString.aui,src/ByteString.aum \
 		test/Unit.aui,test/Unit.aum \
 		test/Tuples.aui,test/Tuples.aum \
