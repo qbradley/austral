@@ -5,6 +5,7 @@ MODULES := \
 		src/Order.aui,src/Order.aum \
 		src/Box.aui,src/Box.aum \
 		src/Buffer.aui,src/Buffer.aum \
+		src/Hashtable.aui,src/Hashtable.aum \
 		src/ByteString.aui,src/ByteString.aum \
 		test/Unit.aui,test/Unit.aum \
 		test/Tuples.aui,test/Tuples.aum \
@@ -13,6 +14,7 @@ MODULES := \
 		test/Order.aui,test/Order.aum \
 		test/Box.aui,test/Box.aum \
 		test/Buffer.aui,test/Buffer.aum \
+		test/Hashtable.aui,test/Hashtable.aum \
 		test/ByteString.aui,test/ByteString.aum \
 		test/Main.aui,test/Main.aum
 TEST_BIN := test_bin

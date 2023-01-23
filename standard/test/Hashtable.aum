@@ -1,0 +1,142 @@
+import Standard.Hashtable (
+    HashMap,
+    Hashable,
+    dump,
+    initializeHashMap,
+    destroyHashMap,
+    removeHashMap,
+    lookupFree,
+    setHash
+);
+
+import Standard.Test.Unit (
+    assertTrue,
+    assertSuccess,
+    assertFailure,
+    suiteHeading,
+    testHeading
+);
+
+module body Standard.Test.Hashtable is
+    function hashtableTestSuite(): Unit is
+        suiteHeading("Standard.Hashtable");
+        basicLifecycleTest(100 : Nat32);
+        basicLifecycleTest("key1");
+        testWithHashMap(thousandKeyNat32Test, "Thousand Key Nat32");
+        return nil;
+    end;
+
+    generic[K: Free]
+    function basicLifecycleTest(key: K): Unit is
+        testHeading("Basic lifecycle: initializeHashMap and destroyHashMap");
+        case initializeHashMap(): Option[HashMap[K,Nat32]] of
+        when Some(value as h: HashMap[K,Nat32]) do
+            setHash(&!h, key, 1: Nat32);
+            removeHashMap(&!h, key);
+            destroyHashMap(h);
+        when None do
+            assertFailure("Failed to initializeHashMap");
+        end case;
+        assertSuccess("Basic lifecycle done.");
+        return nil;
+    end;
+
+    function thousandKeyNat32Test(map: HashMap[Nat32,Nat32]): Unit is
+        let limit: Index := 999;
+        for i from 0 to limit do
+            let n: Nat32 := castNat32(i);
+            let key: Nat32 := n * 13;
+            --print("adding key "); printLn(key);
+            setHash(&!map, key, n);
+            assertLookup(&map, key, n);
+            --dump(&map);
+        end for;
+        for i from 0 to limit do
+            let n: Nat32 := castNat32(i);
+            let key: Nat32 := n * 13;
+            assertLookup(&map, key, n);
+        end for;
+        for i from 0 to limit/2 do
+            let n: Nat32 := castNat32(i*2);
+            let key: Nat32 := n * 13;
+            let value: Nat32 := removeHashMap(&!map, key);
+            assertLookupFail(&map, key, n);
+        end for;
+        for i from 0 to limit/2 do
+            let n: Nat32 := castNat32((limit - (i*2)) - 1);
+            let key: Nat32 := n * 13;
+            -- add it back
+            setHash(&!map, key, n);
+            assertLookup(&map, key, n);
+        end for;
+        for i from 0 to limit do
+            let n: Nat32 := castNat32(i);
+            let key: Nat32 := n * 13;
+            assertLookup(&map, key, n);
+        end for;
+        for i from 0 to limit do
+            let n: Nat32 := castNat32(i);
+            let key: Nat32 := n * 13;
+            --print("removing key "); printLn(key);
+            let value: Nat32 := removeHashMap(&!map, key);
+            --dump(&map);
+        end for;
+        destroyHashMap(map);
+        return nil;
+    end;
+
+    generic[K: Free(Hashable, Printable), R: Region]
+    function assertLookup(map: &[HashMap[K,Nat32],R], key: K, expectedValue: Nat32): Unit is
+        case lookupFree(map, key) of
+        when Some(value: Nat32) do
+            let actualValue: Nat32 := value;
+            if expectedValue /= actualValue then
+                dump(map);
+                --let h: Index := hash(key);
+                --print("        key "); print(key); print(" hash hash "); printLn(h);
+                print("        assertLookup expected key "); print(key); print(" to have value "); print(expectedValue); print(" but actually found "); printLn(actualValue);
+                assertFailure("expected value did not match actual value");
+            end if;
+        when None do
+            print("        assertLookup expected "); print(key); printLn(" but actually not found");
+            assertFailure("Invalid result");
+        end case;
+        return nil;
+    end;
+
+    generic[K: Free(Hashable, Printable), R: Region]
+    function assertLookupFail(map: &[HashMap[K,Nat32],R], key: K, expectedValue: Nat32): Unit is
+        case lookupFree(map, key) of
+        when Some(value: Nat32) do
+            assertFailure("Did not expect to find a result");
+        when None do
+            skip;
+        end case;
+        return nil;
+    end;
+
+    generic[T: Free(ToNat32)]
+    function castNat32(value: T): Nat32 is
+        case toNat32(value) of
+        when Some(value as result: Nat32) do
+            return result;
+        when None do
+            assertFailure("Unable to convert value to Nat32");
+            return 0;
+        end case;
+    end;
+
+    generic[K: Free]
+    function testWithHashMap(test: Fn[HashMap[K,Nat32],Unit], name: FixedArray[Nat8]): Unit is
+        testHeading(name);
+        case initializeHashMap(): Option[HashMap[K,Nat32]] of
+        when Some(value: HashMap[K,Nat32]) do
+            test(value);
+        when None do
+            assertFailure("Failed to initializeHashMap");
+        end case;
+        assertSuccess(name);
+        return nil;
+    end;
+
+end module body.

@@ -1,0 +1,36 @@
+
+import Standard.Buffer (Buffer);
+
+module Standard.Hashtable is
+
+    type HashMap[K: Free(Hashable), V: Free]: Linear;
+
+    typeclass Hashable(K: Free) is
+        method hash(key: K): Index;
+        method keyEqual(key1: K, key2: K): Bool;
+    end;
+
+    generic[K: Free(Hashable), V: Free]
+    function initializeHashMap(): Option[HashMap[K,V]];
+
+    generic[K: Free(Hashable), V: Free]
+    function destroyHashMap(map: HashMap[K,V]): Unit;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function removeHashMap(map: &![HashMap[K,V], R], key: K): V;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function lookupFree(map: &[HashMap[K,V], R], key: K): Option[V];
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function setHash(map: &![HashMap[K,V], R], key: K, value: V): Unit;
+
+    generic[K: Free(Hashable, Printable), V: Free(Printable), R: Region]
+    function dump(map: &[HashMap[K,V], R]): Unit;
+
+    instance Hashable(Nat8);
+    instance Hashable(Nat32);
+    generic[T: Free(Hashable)]
+    instance Hashable(FixedArray[T]);
+
+end module.

@@ -1,0 +1,321 @@
+
+import Standard.Buffer (
+    Buffer,
+    safeAllocateEmpty,
+    safeInitialize,
+    destroyFree,
+    destroyEmpty,
+    length,
+    nth,
+    storeNth,
+    swapNth,
+    swapIndex,
+    insertBack,
+    removeLast
+);
+
+import Standard.Bounded ();
+
+module body Standard.Hashtable is
+
+    union IndexEntry[K: Free, V: Free]: Type is
+        case Available;
+        case Tombstone;
+        case Used is
+            key: K;
+            value: V;
+    end;
+    
+    record HashMap[K: Free(Hashable), V: Free]: Linear is
+        hash_index: Buffer[IndexEntry[K,V]];
+
+        -- number of slots used (value or tombstone)
+        used_count: Index;
+    end;
+
+    generic[K: Free(Hashable), V: Free]
+    function initializeHashMap(): Option[HashMap[K,V]] is
+        let available_index_entry : IndexEntry[K,V] := Available();
+        case safeInitialize(16, available_index_entry): Option[Buffer[IndexEntry[K,V]]] of
+            when Some(value as hash_index: Buffer[IndexEntry[K,V]]) do
+               return Some(value => HashMap(hash_index => hash_index, used_count => 0));
+            when None do
+               return None();
+        end case;
+    end;
+
+    generic[K: Free(Hashable), V: Free]
+    function destroyHashMap(map: HashMap[K,V]): Unit is
+        let {
+            hash_index: Buffer[IndexEntry[K,V]],
+            used_count: Index
+            } := map;
+        destroyFree(hash_index);
+        return nil;
+    end;
+
+    function getRemainder(value: Index, hash_size: Index): Index is
+        return value - modularMultiply(modularDivide(value, hash_size), hash_size);
+    end;
+
+    generic[K: Free(Hashable), R: Region]
+    function getHashIndex(key: K, hash_size: Index): Index is
+        let index : Index := hash(key);
+        return getRemainder(index, hash_size);
+    end;
+
+    generic[K: Free(Hashable), V: Free, R1: Region, R2: Region]
+    function swapHashIndex(a: &![Buffer[IndexEntry[K,V]], R1], b: &![Buffer[IndexEntry[K,V]], R2]): Unit is
+        swapReference(a, b);
+        return nil;
+    end;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function rehash(map: &![HashMap[K,V], R]): Unit is
+        let used_count: Index := !map->used_count;
+        let hash_size: Index := length(map->hash_index : &[Buffer[IndexEntry[K,V]], R]);
+
+        --printLn(">>> rehash used_count "); print(used_count); print(" hash_size "); printLn(hash_size);
+        if (used_count * 2) >= hash_size  then
+            --printLn(">>> REHASH");
+            let new_size: Index := hash_size * 2;
+            let available_index_entry : IndexEntry[K,V] := Available();
+            case safeInitialize(new_size, available_index_entry): Option[Buffer[IndexEntry[K,V]]] of
+                when Some(value as new_hash_index: Buffer[IndexEntry[K,V]]) do
+                    used_count := 0;
+                    for i from 0 to hash_size - 1 do
+                        let entry: IndexEntry[K,V] := nth(map->hash_index: &[Buffer[IndexEntry[K,V]], R], i);
+                        case entry of
+                            when Used(key: K, value: V) do
+                                if setHashIndexFree(&!new_hash_index, key, value) then
+                                    used_count := used_count + 1;
+                                end if;
+                            when Available do
+                                skip;
+                            when Tombstone do
+                                skip;
+                        end case;
+                    end for;
+
+                    map->used_count := used_count;
+                    swapHashIndex(map->hash_index, &!new_hash_index);
+                    destroyFree(new_hash_index);
+                when None do
+                    abort("Memory allocation failure");
+            end case;
+        else
+            -- TODO: if there are many deletes, consider rehashing downwards
+            skip;
+        end if;
+        return nil;
+    end;
+
+    -- returns old value
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function removeHashMap(map: &![HashMap[K,V], R], key: K): V is
+        let hash_index: &[Buffer[IndexEntry[K,V]], R] := map->hash_index: &[Buffer[IndexEntry[K,V]], R];
+        let hash_size: Index := length(hash_index);
+        let start_index: Index := getHashIndex(key, hash_size);
+        for i from 0 to hash_size - 1 do
+            let actual_index: Index := getRemainder(start_index + i, hash_size);
+            let index_value: IndexEntry[K,V] := nth(hash_index, actual_index);
+            case index_value of
+            when Used(key as existing_key: K, value as existing_value: V) do
+                let keys_are_equal: Bool := keyEqual(existing_key, key);
+                if keys_are_equal then
+                    -- found it!
+                    let tombstone: IndexEntry[K,V] := Tombstone();
+                    storeNth(map->hash_index, actual_index, tombstone);
+                    return existing_value;
+                end if;
+            when Available do
+                abort("Not found");
+            when Tombstone do
+                skip;
+            end case;
+        end for;
+        abort("Not found");
+    end;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function lookupFree(map: &[HashMap[K,V], R], key: K): Option[V] is
+        let hash_index: &[Buffer[IndexEntry[K,V]], R] := map->hash_index;
+        let hash_size: Index := length(hash_index);
+        let start_index: Index := getHashIndex(key, hash_size);
+        for i from 0 to hash_size - 1 do
+            let actual_index: Index := getRemainder(start_index + i, hash_size);
+            let index_value: IndexEntry[K,V] := nth(hash_index, actual_index);
+            case index_value of
+            when Used(key as actual_key: K, value: V) do
+                let keys_are_equal: Bool := keyEqual(key, actual_key);
+                if keys_are_equal then
+                    -- found it!
+                    return Some(value => value);
+                end if;
+            when Available do
+                return None();
+            when Tombstone do
+                skip;
+            end case;
+        end for;
+        return None();
+    end;
+
+    generic[K: Free, V: Free]
+    function destroyIndexEntry(entry: IndexEntry[K,V]): Unit is
+        case entry of
+        when Available do
+            skip;
+        when Tombstone do
+            skip;
+        when Used(key: K, value: V) do
+            abort("Attempting to consume a used index entry.");
+        end case;
+        return nil;
+    end;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function setHashIndexFree(hash_index_write: &![Buffer[IndexEntry[K,V]], R], key: K, value: V): Bool is
+        let hash_index: &[Buffer[IndexEntry[K,V]], R] := hash_index_write: &[Buffer[IndexEntry[K,V]], R];
+        let hash_size: Index := length(hash_index);
+        let start_index: Index := getHashIndex(key, hash_size);
+        for i from 0 to hash_size - 1 do
+            let actual_index: Index := getRemainder(start_index + i, hash_size);
+            let index_value: IndexEntry[K,V] := nth(hash_index, actual_index);
+            case index_value of
+                when Available do
+                    storeNth(hash_index_write, actual_index, Used(key=>key, value=>value));
+                    return true;
+                when Tombstone do
+                    storeNth(hash_index_write, actual_index, Used(key=>key, value=>value));
+                    return false;
+                when Used(key as found_key: K, value as found_value: V) do
+                    if keyEqual(found_key, key) then
+                        storeNth(hash_index_write, actual_index, Used(key=>key, value=>value));
+                        return false;
+                    end if;
+            end case;
+        end for;
+        abort("Not able to find a slot");
+    end;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function setHash(map: &![HashMap[K,V], R], key: K, value: V): Unit is
+        rehash(map);
+
+        let map_ref: &[HashMap[K,V], R] := map : &[HashMap[K,V], R];
+        let new_used: Bool := setHashIndexFree(map->hash_index, key, value);
+        if new_used then
+            let new_used_count: Index := (!map_ref->used_count) + 1;
+            map->used_count := new_used_count;
+        end if;
+
+        return nil;
+    end;
+
+    generic[K: Free(Hashable, Printable), V: Free(Printable), R: Region]
+    function dump(map: &[HashMap[K,V], R]): Unit is
+        let hash_size: Index := length(map->hash_index);
+        for i from 0 to hash_size - 1 do
+            print("index ");
+            if i < 10 then print(" "); end if;
+            if i < 100 then print(" "); end if;
+            print(i); print(" ");
+            let index_value: IndexEntry[K,V] := nth(map->hash_index, i);
+            case index_value of
+                when Available do
+                    printLn("available");
+                when Tombstone do
+                    printLn("tombstone");
+                when Used(key: K, value: V) do
+                    print("key ");
+                    print(key);
+                    print("value ");
+                    printLn(value);
+            end case;
+        end for;
+        return nil;
+    end;
+
+    generic[T: Free(Hashable)]
+    instance Hashable(FixedArray[T]) is
+        method hash(key: FixedArray[T]): Index is
+            let inv_golden_ratio: Index := #x9e3779b9;
+            let inv_golden_ratio_64: Nat64 := #x517cceb727220a95;
+            let none_index: Option[Index] := None();
+            case toIndex(inv_golden_ratio_64) of
+            when Some(value: Index) do
+                inv_golden_ratio := value;
+            when None do
+                skip;
+            end case;
+
+            let size: Index := fixedArraySize(key);
+            if size = 0 then
+                return 0;
+            end if;
+
+            let result: Index := hash(key[0]);
+            for i from 1 to size - 1 do
+                let next: Index := hash(key[i]);
+
+                -- Combining algorithm from https://stackoverflow.com/a/27952689
+                result = bitwiseXor(result, ((next + inv_golden_ratio) + modularMultiply(result,64:Index)) + modularDivide(result,4:Index));
+            end for;
+
+            return result;
+        end;
+        method keyEqual(key1: FixedArray[T], key2: FixedArray[T]): Bool is
+            let size1: Index := fixedArraySize(key1);
+            let size2: Index := fixedArraySize(key2);
+            if size1 /= size2 then
+                return false;
+            end if;
+            for i from 0 to size1 - 1 do
+                if key1[i] /= key2[i] then
+                    return false;
+                end if;
+            end for;
+            return true;
+        end;
+    end;
+
+    instance Hashable(Nat8) is
+        method hash(key: Nat8): Index is
+            case toNat32(key) of
+            when Some(value: Nat32) do
+                return hash(value);
+            when None do
+                abort("Should not be possible to fail to convert a Nat8 to a Nat32");
+                return 0;
+            end case;
+        end;
+        method keyEqual(key1: Nat8, key2: Nat8): Bool is
+            return key1 = key2;
+        end;
+    end;
+    
+    constant hash_value_1: Nat32 := 65536;
+    constant hash_value_2: Nat32 := #x45d9f3b;
+
+    instance Hashable(Nat32) is
+        method hash(key: Nat32): Index is
+            let value: Nat32 := key;
+
+            -- hash algorithm for 32 bit integers from https://stackoverflow.com/a/12996028
+            value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
+            value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
+            value := bitwiseXor(modularDivide(value, hash_value_1), value);
+            case toIndex(value) of
+            when Some(value as hash_result: Index) do
+                return hash_result;
+            when None do
+                abort("Failed to convert Nat32 to Index");
+            end case;
+        end;
+        method keyEqual(key1: Nat32, key2: Nat32): Bool is
+            return key1 = key2;
+        end;
+    end;
+    
+end module body.
