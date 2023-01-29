@@ -20,7 +20,7 @@ module body Test is
     generic[R: Region]
     function update(wrapper:&![WrapLinear, R], new_value: Nat32): Unit is
         let replace: InnerLinear := InnerLinear(value => 2);
-        swap(wrapper->inner, &!replace);
+        swapReference(wrapper->inner, &!replace);
         destroyInner(replace);
         return nil;
     end;

@@ -1,7 +1,7 @@
 module body Austral.Pervasive is
 
     generic [T: Type, R1: Region, R2: Region]
-    function swap(a: &![T, R1], b: &![T, R2]): Unit is
+    function swapReference(a: &![T, R1], b: &![T, R2]): Unit is
         return @embed(Unit, "au_swap($1, $2, sizeof(*a))", a, b);
     end;
     
