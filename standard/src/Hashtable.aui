@@ -4,8 +4,7 @@ module Hashtable is
     type HashMap[K: Free, V: Type]: Type;
 
     typeclass Hashable(K: Free) is
-        generic [R: Region]
-        method hash(key: &[K, R]): Index;
+        method hash(key: K): Index;
     end;
 
     generic[K: Free, V: Type]
@@ -23,6 +22,9 @@ module Hashtable is
     generic[K: Free(Printable), V: Type, R: Region]
     function dump(map: &[HashMap[K,V], R]): Unit;
 
+    instance Hashable(Nat8);
     instance Hashable(Nat32);
+    generic[T: Free(Hashable)]
+    instance Hashable(FixedArray[T]);
 
 end module.

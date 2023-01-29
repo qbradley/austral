@@ -24,25 +24,6 @@ import Standard.Buffer (
 
 module body Hashtable is
 
-    constant hash_value_1: Nat32 := 65536;
-    constant hash_value_2: Nat32 := 73244475;
-
-    instance Hashable(Nat32) is
-        generic [R:Region]
-        method hash(key: &[Nat32, R]): Index is
-            let value: Nat32 := !key;
-            value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
-            value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
-            value := bitwiseXor(modularDivide(value, hash_value_1), value);
-            case toIndex(value) of
-            when Some(value as hash_result: Index) do
-                return hash_result;
-            when None do
-                abort("Failed to convert Nat32 to Index");
-            end case;
-        end;
-    end;
-    
     union IndexEntry[K: Free]: Type is
         case Available;
         case Tombstone;
@@ -97,13 +78,13 @@ module body Hashtable is
 
     generic[K: Free(Hashable), R: Region]
     function getHashIndex(key: K, hash_size: Index): Index is
-        let index : Index := hash(&key);
+        let index : Index := hash(key);
         return getRemainder(index, hash_size);
     end;
 
     generic[K: Free, R1: Region, R2: Region]
     function swapHashIndex(a: &![Buffer[IndexEntry[K]], R1], b: &![Buffer[IndexEntry[K]], R2]): Unit is
-        swap(a, b);
+        swapReference(a, b);
         return nil;
     end;
 
@@ -246,4 +227,53 @@ module body Hashtable is
         return nil;
     end;
 
+    constant hash_value_1: Nat32 := 65536;
+    constant hash_value_2: Nat32 := 73244475;
+
+    constant fnv1a_32bit_offset_basis: Nat32 := 2166136261;
+    constant fnv1a_32bit_prime: Nat32 := 16777619;
+    constant fnv1a_64bit_offset_basis: Nat32 := 2166136261;
+    constant fnv1a_64bit_prime: Nat32 := 16777619;
+
+    generic[T: Free(Hashable)]
+    instance Hashable(FixedArray[T]) is
+        method hash(key: FixedArray[T]): Index is
+            -- TODO: use a better combiner algorithm than xor
+            let result: Index := 0;
+            let size: Index := fixedArraySize(key);
+            for i from 0 to size - 1 do
+                let next: T := key[i];
+                result = bitwiseXor(result, hash(next));
+            end for;
+            return result;
+        end;
+    end;
+
+    instance Hashable(Nat8) is
+        method hash(key: Nat8): Index is
+            case toNat32(key) of
+            when Some(value: Nat32) do
+                return hash(value);
+            when None do
+                abort("Should not be possible to fail to convert a Nat8 to a Nat32");
+                return 0;
+            end case;
+        end;
+    end;
+    
+    instance Hashable(Nat32) is
+        method hash(key: Nat32): Index is
+            let value: Nat32 := key;
+            value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
+            value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
+            value := bitwiseXor(modularDivide(value, hash_value_1), value);
+            case toIndex(value) of
+            when Some(value as hash_result: Index) do
+                return hash_result;
+            when None do
+                abort("Failed to convert Nat32 to Index");
+            end case;
+        end;
+    end;
+    
 end module body.
