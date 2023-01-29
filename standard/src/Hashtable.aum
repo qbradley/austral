@@ -1,25 +1,16 @@
 
 import Standard.Buffer (
     Buffer,
-    allocateEmpty,
     safeAllocateEmpty,
-    initialize,
     safeInitialize,
     destroyFree,
     destroyEmpty,
     length,
     nth,
     storeNth,
-    swapNth,
     swapIndex,
-    fill,
-    insert,
-    insertFront,
     insertBack,
-    remove,
-    removeFirst,
-    removeLast,
-    reverse
+    removeLast
 );
 
 module body Hashtable is
