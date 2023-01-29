@@ -43,7 +43,7 @@ let resolve_import (env: env) (kind: module_kind) (imports: import_map) (idecl: 
      if is_importable decl then
        match get_symbol imports nickname with
        | Some _ ->
-          err "Colliding imports"
+          err ("Colliding imports: `" ^ (ident_string nickname) ^ "` and `" ^ (ident_string name) ^ "`")
        | None ->
           if (equal_module_name module_name memory_module_name) && (kind = SafeModule) then
             err "Cannot import from the Austral.Memory module in a safe module."
