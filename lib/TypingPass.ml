@@ -411,7 +411,7 @@ and augment_pointer_slot_accessor_elem (env: env) (module_name: module_name) (sl
      else
        err "Trying to read a slot from a pointer to a non-public record"
   | _ ->
-     err "Pointer does not point to a record type."
+     err ("Pointer does not point to a record type. slot_name: `" ^ (ident_string slot_name) ^ "`")
 
 and augment_reference_slot_accessor_elem (env: env) (module_name: module_name) (slot_name: identifier) (type_name: qident) (type_args: ty list) =
   (* Check: e' is a public record type *)
@@ -635,7 +635,7 @@ and augment_method_call (env: env) (source_module_name: module_name) (typeclass_
          pt ("Dispatch Type", dispatch_ty);
          (* Is the dispatch type a type variable? *)
          (match dispatch_ty with
-          | TyVar (TypeVariable (_, _, _, constraints)) ->
+          | TyVar (TypeVariable (n, _, _, constraints)) ->
              (* If so, check if the constraints say that it implements the typeclass. *)
              let tc_name: sident = get_decl_sident_or_die env typeclass_id in
              if List.exists (fun c -> equal_sident tc_name c) constraints then
@@ -655,7 +655,7 @@ and augment_method_call (env: env) (source_module_name: module_name) (typeclass_
                  }
              else
                (* If it doesn't, that's an error *)
-               err "Type parameter does not implement typeclass."
+               err ("Type parameter `" ^ (ident_string n) ^ "` does not implement typeclass `" ^ (ident_string (sident_name tc_name)) ^ "`")
           | _ ->
              (* If it's not a type variable, continue normal instance resolution. *)
              let (instance, instance_bindings): decl * type_bindings =
