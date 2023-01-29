@@ -1,25 +1,26 @@
 
-module Hashtable is
+module Standard.Hashtable is
 
-    type HashMap[K: Free, V: Type]: Type;
+    type HashMap[K: Free(Hashable), V: Type]: Type;
 
     typeclass Hashable(K: Free) is
         method hash(key: K): Index;
+        method keyEqual(key1: K, key2: K): Bool;
     end;
 
-    generic[K: Free, V: Type]
+    generic[K: Free(Hashable), V: Type]
     function initializeHashMap(): Option[HashMap[K,V]];
 
-    generic[K: Free, V: Type]
+    generic[K: Free(Hashable), V: Type]
     function destroyHashMap(map: HashMap[K,V]): Unit;
 
-    generic[K: Free, V: Type, R: Region]
+    generic[K: Free(Hashable), V: Type, R: Region]
     function removeHashMap(map: &![HashMap[K,V], R], fd: K): V;
 
-    generic[K: Free, V: Type, R: Region]
+    generic[K: Free(Hashable), V: Type, R: Region]
     function setHash(map: &![HashMap[K,V], R], fd: K, value: V): Unit;
 
-    generic[K: Free(Printable), V: Type, R: Region]
+    generic[K: Free(Hashable, Printable), V: Type, R: Region]
     function dump(map: &[HashMap[K,V], R]): Unit;
 
     instance Hashable(Nat8);

@@ -13,9 +13,11 @@ import Standard.Buffer (
     removeLast
 );
 
-module body Hashtable is
+import Standard.Bounded ();
 
-    union IndexEntry[K: Free]: Type is
+module body Standard.Hashtable is
+
+    union IndexEntry[K: Free(Hashable)]: Type is
         case Available;
         case Tombstone;
         case Used is
@@ -23,7 +25,7 @@ module body Hashtable is
             position: Index;
     end;
     
-    record HashMap[K: Free, V: Type]: Type is
+    record HashMap[K: Free(Hashable), V: Type]: Type is
         items: Buffer[V];
 
         -- hash buckets to offsets in items
@@ -33,7 +35,7 @@ module body Hashtable is
         used_count: Index;
     end;
 
-    generic[K: Free, V: Type]
+    generic[K: Free(Hashable), V: Type]
     function initializeHashMap(): Option[HashMap[K,V]] is
         case safeAllocateEmpty(): Option[Buffer[V]] of
             when Some(value as items: Buffer[V]) do
@@ -50,7 +52,7 @@ module body Hashtable is
         end case;
     end;
 
-    generic[K: Free, V: Type]
+    generic[K: Free(Hashable), V: Type]
     function destroyHashMap(map: HashMap[K,V]): Unit is
         let {
             items: Buffer[V],
@@ -73,13 +75,13 @@ module body Hashtable is
         return getRemainder(index, hash_size);
     end;
 
-    generic[K: Free, R1: Region, R2: Region]
+    generic[K: Free(Hashable), R1: Region, R2: Region]
     function swapHashIndex(a: &![Buffer[IndexEntry[K]], R1], b: &![Buffer[IndexEntry[K]], R2]): Unit is
         swapReference(a, b);
         return nil;
     end;
 
-    generic[K: Free, V: Type, R: Region]
+    generic[K: Free(Hashable), V: Type, R: Region]
     function rehash(map: &![HashMap[K,V], R]): Unit is
         let used_count: Index := !map->used_count;
         let hash_size: Index := length(map->hash_index : &[Buffer[IndexEntry[K]], R]);
@@ -114,7 +116,7 @@ module body Hashtable is
     end;
 
     -- returns old value
-    generic[K: Free, V: Type, R: Region]
+    generic[K: Free(Hashable), V: Type, R: Region]
     function removeHash(map: &![HashMap[K,V], R], fd: K): Index is
         let hash_index: &![Buffer[IndexEntry[K]], R] := map->hash_index;
         let hash_index_read: &[Buffer[IndexEntry[K]], R] := hash_index: &[Buffer[IndexEntry[K]], R];
@@ -125,7 +127,8 @@ module body Hashtable is
             let index_value: IndexEntry[K] := nth(hash_index_read, actual_index);
             case index_value of
             when Used(key: K, position: Index) do
-                if key = fd then
+                let keys_are_equal: Bool := keyEqual(key, fd);
+                if keys_are_equal then
                     -- found it!
                     let tombstone: IndexEntry[K] := Tombstone();
                     storeNth(hash_index, actual_index, tombstone);
@@ -140,7 +143,7 @@ module body Hashtable is
         abort("Not found");
     end;
 
-    generic[K: Free, V: Type, R: Region]
+    generic[K: Free(Hashable), V: Type, R: Region]
     function removeHashMap(map: &![HashMap[K,V], R], fd: K): V is
         let position: Index := removeHash(map, fd);
         let item_count: Index := length(map->items : &[Buffer[V], R]);
@@ -152,7 +155,7 @@ module body Hashtable is
     end;
     
     -- return true if a free entry is consumed
-    generic[K: Free, R: Region]
+    generic[K: Free(Hashable), R: Region]
     function setHashIndex(hash_index_write: &![Buffer[IndexEntry[K]], R], key: K, position: Index): Bool is
         let hash_index: &[Buffer[IndexEntry[K]], R] := hash_index_write: &[Buffer[IndexEntry[K]], R];
         let hash_size: Index := length(hash_index);
@@ -169,7 +172,7 @@ module body Hashtable is
                     storeNth(hash_index_write, actual_index, Used(key=>key, position=>position));
                     return false;
                 when Used(key as found_key: K, position as found_position: Index) do
-                    if found_key = key then
+                    if keyEqual(found_key, key) then
                         storeNth(hash_index_write, actual_index, Used(key=>key, position=>position));
                         return false;
                     end if;
@@ -178,7 +181,7 @@ module body Hashtable is
         abort("Not able to find a slot");
     end;
 
-    generic[K: Free, V: Type, R: Region]
+    generic[K: Free(Hashable), V: Type, R: Region]
     function setHash(map: &![HashMap[K,V], R], fd: K, value: V): Unit is
         rehash(map);
 
@@ -195,7 +198,7 @@ module body Hashtable is
         return nil;
     end;
 
-    generic[K: Free(Printable), V: Type, R: Region]
+    generic[K: Free(Hashable, Printable), V: Type, R: Region]
     function dump(map: &[HashMap[K,V], R]): Unit is
         let hash_size: Index := length(map->hash_index);
         for i from 0 to hash_size - 1 do
@@ -221,23 +224,46 @@ module body Hashtable is
     constant hash_value_1: Nat32 := 65536;
     constant hash_value_2: Nat32 := 73244475;
 
-    constant fnv1a_32bit_offset_basis: Nat32 := 2166136261;
-    constant fnv1a_32bit_prime: Nat32 := 16777619;
-    constant fnv1a_64bit_offset_basis: Nat32 := 2166136261;
-    constant fnv1a_64bit_prime: Nat32 := 16777619;
-
     generic[T: Free(Hashable)]
     instance Hashable(FixedArray[T]) is
         method hash(key: FixedArray[T]): Index is
-            -- TODO: use a better combiner algorithm than xor
-            -- e.g. https://stackoverflow.com/a/27952689
-            let result: Index := 0;
+            let inv_golden_ratio: Index := #x9e3779b9;
+            let inv_golden_ratio_64: Nat64 := #x517cceb727220a95;
+            let none_index: Option[Index] := None();
+            case toIndex(inv_golden_ratio_64) of
+            when Some(value: Index) do
+                inv_golden_ratio := value;
+            when None do
+                skip;
+            end case;
+
             let size: Index := fixedArraySize(key);
-            for i from 0 to size - 1 do
-                let next: T := key[i];
-                result = bitwiseXor(result, hash(next));
+            if size = 0 then
+                return 0;
+            end if;
+
+            let result: Index := hash(key[0]);
+            for i from 1 to size - 1 do
+                let next: Index := hash(key[i]);
+
+                -- Combining algorithm from https://stackoverflow.com/a/27952689
+                result = bitwiseXor(result, ((next + inv_golden_ratio) + modularMultiply(result,64:Index)) + modularDivide(result,4:Index));
             end for;
+
             return result;
+        end;
+        method keyEqual(key1: FixedArray[T], key2: FixedArray[T]): Bool is
+            let size1: Index := fixedArraySize(key1);
+            let size2: Index := fixedArraySize(key2);
+            if size1 /= size2 then
+                return false;
+            end if;
+            for i from 0 to size1 - 1 do
+                if key1[i] /= key2[i] then
+                    return false;
+                end if;
+            end for;
+            return true;
         end;
     end;
 
@@ -250,6 +276,9 @@ module body Hashtable is
                 abort("Should not be possible to fail to convert a Nat8 to a Nat32");
                 return 0;
             end case;
+        end;
+        method keyEqual(key1: Nat8, key2: Nat8): Bool is
+            return key1 = key2;
         end;
     end;
     
@@ -265,6 +294,9 @@ module body Hashtable is
             when None do
                 abort("Failed to convert Nat32 to Index");
             end case;
+        end;
+        method keyEqual(key1: Nat32, key2: Nat32): Bool is
+            return key1 = key2;
         end;
     end;
     

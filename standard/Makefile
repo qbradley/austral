@@ -14,6 +14,7 @@ MODULES := \
 		test/Order.aui,test/Order.aum \
 		test/Box.aui,test/Box.aum \
 		test/Buffer.aui,test/Buffer.aum \
+		test/Hashtable.aui,test/Hashtable.aum \
 		test/ByteString.aui,test/ByteString.aum \
 		test/Main.aui,test/Main.aum
 TEST_BIN := test_bin
