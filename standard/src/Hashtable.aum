@@ -7,6 +7,7 @@ import Standard.Buffer (
     destroyEmpty,
     length,
     nth,
+    nthReference,
     storeNth,
     swapIndex,
     insertBack,
@@ -141,6 +142,36 @@ module body Standard.Hashtable is
             end case;
         end for;
         abort("Not found");
+    end;
+
+    generic[K: Free(Hashable), V: Type, R: Region]
+    function getItems(map: &[HashMap[K,V], R]): &[Buffer[V],R] is
+        return map->items;
+    end;
+    
+    generic[K: Free(Hashable), V: Type, R: Region]
+    function lookup(map: &[HashMap[K,V], R], key: K): Option[&[V,R]] is
+        let hash_index: &[Buffer[IndexEntry[K]], R] := map->hash_index;
+        let hash_size: Index := length(hash_index);
+        let start_index: Index := getHashIndex(key, hash_size);
+        for i from 0 to hash_size - 1 do
+            let actual_index: Index := getRemainder(start_index + i, hash_size);
+            let index_value: IndexEntry[K] := nth(hash_index, actual_index);
+            case index_value of
+            when Used(key as actual_key: K, position: Index) do
+                let keys_are_equal: Bool := keyEqual(key, actual_key);
+                if keys_are_equal then
+                    -- found it!
+                    let itemReference: &[V,R] := nthReference(map->items, position);
+                    return Some(value => itemReference);
+                end if;
+            when Available do
+                return None();
+            when Tombstone do
+                skip;
+            end case;
+        end for;
+        return None();
     end;
 
     generic[K: Free(Hashable), V: Type, R: Region]

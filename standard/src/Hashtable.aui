@@ -1,4 +1,6 @@
 
+import Standard.Buffer (Buffer);
+
 module Standard.Hashtable is
 
     type HashMap[K: Free(Hashable), V: Type]: Type;
@@ -16,6 +18,12 @@ module Standard.Hashtable is
 
     generic[K: Free(Hashable), V: Type, R: Region]
     function removeHashMap(map: &![HashMap[K,V], R], fd: K): V;
+
+    generic[K: Free(Hashable), V: Type, R: Region]
+    function getItems(map: &[HashMap[K,V], R]): &[Buffer[V],R];
+
+    generic[K: Free(Hashable), V: Type, R: Region]
+    function lookup(map: &[HashMap[K,V], R], key: K): Option[&[V,R]];
 
     generic[K: Free(Hashable), V: Type, R: Region]
     function setHash(map: &![HashMap[K,V], R], fd: K, value: V): Unit;
