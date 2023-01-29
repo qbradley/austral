@@ -230,6 +230,7 @@ module body Hashtable is
     instance Hashable(FixedArray[T]) is
         method hash(key: FixedArray[T]): Index is
             -- TODO: use a better combiner algorithm than xor
+            -- e.g. https://stackoverflow.com/a/27952689
             let result: Index := 0;
             let size: Index := fixedArraySize(key);
             for i from 0 to size - 1 do
