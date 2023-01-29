@@ -9,6 +9,7 @@ import Austral.Memory (
     negativeOffset,
     store,
     load,
+    loadRead,
     memcpy,
     memmove,
     arraySizeInBytes
@@ -174,6 +175,16 @@ module body Standard.Buffer is
         let ptr: Pointer[T] := positiveOffset(!buf->array, pos);
         let elem: T := load(ptr);
         return elem;
+    end;
+
+    generic [T: Type, R: Region]
+    function nthReference(buf: &[Buffer[T], R], pos: Index): &[T,R] is
+        if pos >= !buf->size then
+            abort("nth: index out of range");
+        end if;
+        let ptr: Pointer[T] := positiveOffset(!buf->array, pos);
+        let ref: &[T,R] := loadRead(&ptr);
+        return ref;
     end;
 
     ---
