@@ -221,9 +221,6 @@ module body Standard.Hashtable is
         return nil;
     end;
 
-    constant hash_value_1: Nat32 := 65536;
-    constant hash_value_2: Nat32 := 73244475;
-
     generic[T: Free(Hashable)]
     instance Hashable(FixedArray[T]) is
         method hash(key: FixedArray[T]): Index is
@@ -282,9 +279,14 @@ module body Standard.Hashtable is
         end;
     end;
     
+    constant hash_value_1: Nat32 := 65536;
+    constant hash_value_2: Nat32 := #x45d9f3b;
+
     instance Hashable(Nat32) is
         method hash(key: Nat32): Index is
             let value: Nat32 := key;
+
+            -- hash algorithm for 32 bit integers from https://stackoverflow.com/a/12996028
             value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
             value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
             value := bitwiseXor(modularDivide(value, hash_value_1), value);
