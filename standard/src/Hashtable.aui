@@ -25,6 +25,18 @@ module Standard.Hashtable is
     generic[K: Free(Hashable), V: Free, R: Region]
     function setHash(map: &![HashMap[K,V], R], key: K, value: V): Unit;
 
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function getCount(map: &[HashMap[K,V],R]): Index;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function getTombstones(map: &[HashMap[K,V],R]): Index;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function getBuckets(map: &[HashMap[K,V],R]): Index;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function rehash(map: &![HashMap[K,V], R], new_size: Index): Unit;
+
     generic[K: Free(Hashable, Printable), V: Free(Printable), R: Region]
     function dump(map: &[HashMap[K,V], R]): Unit;
 

@@ -1,3 +1,10 @@
+--
+-- This is an implementation of a hashtable backed by a buffer using open addressing and linear probing.
+-- The backing buffer is initially 16 elements and size in increases by powers of two when 50% full.
+--
+-- TODO: implement iteration
+-- TODO: implement linear values (blocked on passing union read reference to "case")
+-- TODO: implement robin hood hashing
 
 import Standard.Buffer (
     Buffer,
@@ -28,9 +35,8 @@ module body Standard.Hashtable is
     
     record HashMap[K: Free(Hashable), V: Free]: Linear is
         hash_index: Buffer[IndexEntry[K,V]];
-
-        -- number of slots used (value or tombstone)
         used_count: Index;
+        tombstone_count: Index;
     end;
 
     generic[K: Free(Hashable), V: Free]
@@ -38,7 +44,18 @@ module body Standard.Hashtable is
         let available_index_entry : IndexEntry[K,V] := Available();
         case safeInitialize(16, available_index_entry): Option[Buffer[IndexEntry[K,V]]] of
             when Some(value as hash_index: Buffer[IndexEntry[K,V]]) do
-               return Some(value => HashMap(hash_index => hash_index, used_count => 0));
+               return Some(value => HashMap(hash_index => hash_index, used_count => 0, tombstone_count => 0));
+            when None do
+               return None();
+        end case;
+    end;
+
+    generic[K: Free(Hashable), V: Free]
+    function initializeHashMapWithBuckets(bucket_count: Index): Option[HashMap[K,V]] is
+        let available_index_entry : IndexEntry[K,V] := Available();
+        case safeInitialize(bucket_count, available_index_entry): Option[Buffer[IndexEntry[K,V]]] of
+            when Some(value as hash_index: Buffer[IndexEntry[K,V]]) do
+               return Some(value => HashMap(hash_index => hash_index, used_count => 0, tombstone_count => 0));
             when None do
                return None();
         end case;
@@ -46,12 +63,24 @@ module body Standard.Hashtable is
 
     generic[K: Free(Hashable), V: Free]
     function destroyHashMap(map: HashMap[K,V]): Unit is
-        let {
-            hash_index: Buffer[IndexEntry[K,V]],
-            used_count: Index
-            } := map;
+        let { hash_index: Buffer[IndexEntry[K,V]], used_count: Index, tombstone_count: Index } := map;
         destroyFree(hash_index);
         return nil;
+    end;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function getCount(map: &[HashMap[K,V],R]): Index is
+        return !map->used_count;
+    end;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function getTombstones(map: &[HashMap[K,V],R]): Index is
+        return !map->tombstone_count;
+    end;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function getBuckets(map: &[HashMap[K,V],R]): Index is
+        return length(map->hash_index);
     end;
 
     function getRemainder(value: Index, hash_size: Index): Index is
@@ -71,42 +100,35 @@ module body Standard.Hashtable is
     end;
 
     generic[K: Free(Hashable), V: Free, R: Region]
-    function rehash(map: &![HashMap[K,V], R]): Unit is
+    function rehash(map: &![HashMap[K,V], R], new_size: Index): Unit is
         let used_count: Index := !map->used_count;
-        let hash_size: Index := length(map->hash_index : &[Buffer[IndexEntry[K,V]], R]);
-
-        --printLn(">>> rehash used_count "); print(used_count); print(" hash_size "); printLn(hash_size);
-        if (used_count * 2) >= hash_size  then
-            --printLn(">>> REHASH");
-            let new_size: Index := hash_size * 2;
-            let available_index_entry : IndexEntry[K,V] := Available();
-            case safeInitialize(new_size, available_index_entry): Option[Buffer[IndexEntry[K,V]]] of
-                when Some(value as new_hash_index: Buffer[IndexEntry[K,V]]) do
-                    used_count := 0;
-                    for i from 0 to hash_size - 1 do
-                        let entry: IndexEntry[K,V] := nth(map->hash_index: &[Buffer[IndexEntry[K,V]], R], i);
-                        case entry of
-                            when Used(key: K, value: V) do
-                                if setHashIndexFree(&!new_hash_index, key, value) then
-                                    used_count := used_count + 1;
-                                end if;
-                            when Available do
-                                skip;
-                            when Tombstone do
-                                skip;
-                        end case;
-                    end for;
-
-                    map->used_count := used_count;
-                    swapHashIndex(map->hash_index, &!new_hash_index);
-                    destroyFree(new_hash_index);
-                when None do
-                    abort("Memory allocation failure");
-            end case;
-        else
-            -- TODO: if there are many deletes, consider rehashing downwards
-            skip;
+        if new_size <= used_count then
+            abort("You can not rehash to a bucket count less than the number of keys");
         end if;
+        let available_index_entry : IndexEntry[K,V] := Available();
+        case initializeHashMapWithBuckets(new_size): Option[HashMap[K,V]] of
+            when Some(value as new_hash_map: HashMap[K,V]) do
+                let hash_index: &[Buffer[IndexEntry[K,V]],R] := map->hash_index : &[Buffer[IndexEntry[K,V]],R];
+                let hash_size: Index := length(hash_index);
+                for i from 0 to hash_size - 1 do
+                    let entry: IndexEntry[K,V] := nth(hash_index, i);
+                    case entry of
+                        when Used(key: K, value: V) do
+                            setHash(&!new_hash_map, key, value);
+                        when Available do
+                            skip;
+                        when Tombstone do
+                            skip;
+                    end case;
+                end for;
+
+                map->used_count := new_hash_map.used_count;
+                map->tombstone_count := new_hash_map.tombstone_count;
+                swapHashIndex(map->hash_index, &!new_hash_map->hash_index);
+                destroyHashMap(new_hash_map);
+            when None do
+                abort("Memory allocation failure");
+        end case;
         return nil;
     end;
 
@@ -126,6 +148,8 @@ module body Standard.Hashtable is
                     -- found it!
                     let tombstone: IndexEntry[K,V] := Tombstone();
                     storeNth(map->hash_index, actual_index, tombstone);
+                    map->used_count := !map->used_count - 1;
+                    map->tombstone_count := !map->tombstone_count + 1;
                     return existing_value;
                 end if;
             when Available do
@@ -175,44 +199,58 @@ module body Standard.Hashtable is
     end;
 
     generic[K: Free(Hashable), V: Free, R: Region]
-    function setHashIndexFree(hash_index_write: &![Buffer[IndexEntry[K,V]], R], key: K, value: V): Bool is
-        let hash_index: &[Buffer[IndexEntry[K,V]], R] := hash_index_write: &[Buffer[IndexEntry[K,V]], R];
+    function checkRehash(map: &![HashMap[K,V], R]): Unit is
+        let map_read: &[HashMap[K,V], R] := map : &[HashMap[K,V], R];
+        let hash_index: &[Buffer[IndexEntry[K,V]], R] := map_read->hash_index;
+        let used_count: Index := !map_read->used_count;
         let hash_size: Index := length(hash_index);
+
+        if (used_count * 2) >= hash_size then
+            let new_size: Index := hash_size * 2;
+            rehash(map, new_size);
+        end if;
+        return nil;
+    end;
+
+    generic[K: Free(Hashable), V: Free, R: Region]
+    function setHash(map: &![HashMap[K,V], R], key: K, value: V): Unit is
+
+        -- check for rehash first, since it might change hash_size, etc..
+        checkRehash(map);
+
+        let map_read: &[HashMap[K,V], R] := map : &[HashMap[K,V], R];
+        let hash_index: &[Buffer[IndexEntry[K,V]], R] := map_read->hash_index;
+        let hash_size: Index := length(hash_index);
+
         let start_index: Index := getHashIndex(key, hash_size);
         for i from 0 to hash_size - 1 do
             let actual_index: Index := getRemainder(start_index + i, hash_size);
             let index_value: IndexEntry[K,V] := nth(hash_index, actual_index);
             case index_value of
                 when Available do
-                    storeNth(hash_index_write, actual_index, Used(key=>key, value=>value));
-                    return true;
+                    storeNth(map->hash_index, actual_index, Used(key=>key, value=>value));
+                    map->used_count := !map->used_count + 1;
+                    return nil;
                 when Tombstone do
-                    storeNth(hash_index_write, actual_index, Used(key=>key, value=>value));
-                    return false;
+                    storeNth(map->hash_index, actual_index, Used(key=>key, value=>value));
+                    map->used_count := !map->used_count + 1;
+                    map->tombstone_count := !map->tombstone_count - 1;
+                    return nil;
                 when Used(key as found_key: K, value as found_value: V) do
                     if keyEqual(found_key, key) then
-                        storeNth(hash_index_write, actual_index, Used(key=>key, value=>value));
-                        return false;
+                        storeNth(map->hash_index, actual_index, Used(key=>key, value=>value));
+                        return nil;
                     end if;
             end case;
         end for;
         abort("Not able to find a slot");
-    end;
-
-    generic[K: Free(Hashable), V: Free, R: Region]
-    function setHash(map: &![HashMap[K,V], R], key: K, value: V): Unit is
-        rehash(map);
-
-        let map_ref: &[HashMap[K,V], R] := map : &[HashMap[K,V], R];
-        let new_used: Bool := setHashIndexFree(map->hash_index, key, value);
-        if new_used then
-            let new_used_count: Index := (!map_ref->used_count) + 1;
-            map->used_count := new_used_count;
-        end if;
-
         return nil;
     end;
 
+    """
+    This function is for debugging purposes. It dumps the internal
+    state of the hashtable.
+    """
     generic[K: Free(Hashable, Printable), V: Free(Printable), R: Region]
     function dump(map: &[HashMap[K,V], R]): Unit is
         let hash_size: Index := length(map->hash_index);
@@ -298,11 +336,11 @@ module body Standard.Hashtable is
     constant hash_value_1: Nat32 := 65536;
     constant hash_value_2: Nat32 := #x45d9f3b;
 
+    -- hash algorithm for 32 bit integers from https://stackoverflow.com/a/12996028
     instance Hashable(Nat32) is
         method hash(key: Nat32): Index is
             let value: Nat32 := key;
 
-            -- hash algorithm for 32 bit integers from https://stackoverflow.com/a/12996028
             value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
             value := modularMultiply(bitwiseXor(modularDivide(value, hash_value_1), value), hash_value_2);
             value := bitwiseXor(modularDivide(value, hash_value_1), value);

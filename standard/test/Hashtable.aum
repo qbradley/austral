@@ -6,6 +6,10 @@ import Standard.Hashtable (
     destroyHashMap,
     removeHashMap,
     lookupFree,
+    getCount,
+    getTombstones,
+    getBuckets,
+    rehash,
     setHash
 );
 
@@ -51,6 +55,11 @@ module body Standard.Test.Hashtable is
             assertLookup(&map, key, n);
             --dump(&map);
         end for;
+
+        assertTrue((1000:Index) = getCount(&map), "Should be 1000 keys");
+        assertTrue((0:Index) = getTombstones(&map), "Should be 0 tombstones");
+        assertTrue((2000:Index) <= getBuckets(&map), "Should be >=2000 buckets");
+        
         for i from 0 to limit do
             let n: Nat32 := castNat32(i);
             let key: Nat32 := n * 13;
@@ -62,6 +71,22 @@ module body Standard.Test.Hashtable is
             let value: Nat32 := removeHashMap(&!map, key);
             assertLookupFail(&map, key, n);
         end for;
+
+        assertTrue((500:Index) = getCount(&map), "Should be 500 keys");
+        assertTrue((500:Index) = getTombstones(&map), "Should be 500 tombstones");
+
+        rehash(&!map, 1000);
+
+        assertTrue((500:Index) = getCount(&map), "Should be 500 keys");
+        assertTrue((0:Index) = getTombstones(&map), "Should be 0 tombstones");
+        assertTrue((1000:Index) = getBuckets(&map), "Should be 1000 buckets");
+
+        for i from 0 to limit/2 do
+            let n: Nat32 := castNat32((i*2) + 1);
+            let key: Nat32 := n * 13;
+            assertLookup(&map, key, n);
+        end for;
+        
         for i from 0 to limit/2 do
             let n: Nat32 := castNat32((limit - (i*2)) - 1);
             let key: Nat32 := n * 13;
